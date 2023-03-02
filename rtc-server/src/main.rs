@@ -1,24 +1,42 @@
 use anyhow::Result;
+use clap::Parser;
 use futures::StreamExt;
 use libp2p::{
     core::muxing::StreamMuxerBox,
-    identity, ping,
+    identity,
+    multiaddr::{Multiaddr, Protocol},
+    ping,
     swarm::{keep_alive, NetworkBehaviour, Swarm},
     webrtc, Transport,
 };
 use rand::thread_rng;
+use std::net::Ipv6Addr;
 use void::Void;
+
+#[derive(Debug, Parser)]
+struct Cli {
+    /// Listen for connection on this port.
+    #[clap(long, default_value_t = 42069)]
+    port: u16,
+}
 
 /// An example WebRTC server that will accept connections and run the ping protocol on them.
 #[tokio::main]
 async fn main() -> Result<()> {
+    let cli = Cli::parse();
+
     let mut swarm = create_swarm()?;
 
-    swarm.listen_on("/ip4/127.0.0.1/udp/0/webrtc".parse()?)?;
+    // Listen for connections on the given port.
+    let address = Multiaddr::from(Ipv6Addr::UNSPECIFIED)
+        .with(Protocol::Udp(cli.port))
+        .with(Protocol::WebRTC);
+
+    swarm.listen_on(address)?;
 
     loop {
         let event = swarm.next().await.unwrap();
-        eprintln!("New event: {event:?}")
+        eprintln!("\nNew event: {event:?}")
     }
 }
 

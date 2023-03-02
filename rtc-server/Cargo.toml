@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.69"
+clap = { version = "4.0.18", features = ["derive"] }
 futures = "0.3.26"
 libp2p-swarm = "0.42.0"
 # libp2p-webrtc = "0.3.0"

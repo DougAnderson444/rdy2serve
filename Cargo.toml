@@ -1,8 +1,18 @@
+[package]
+name = "rdy2serve"
+version = "0.1.0"
+edition = "2021"
+
 [workspace]
 members = [
 #   "rtc-client",
-  "rtc-server",
+  "rtc-server"
 ]
+
+[dependencies]
+anyhow = "1.0.69"
+rtc-server = { path = "rtc-server" }
+tokio = { version = "*"}
 
 [profile.release]
 # opt-level = 2 # fast and small wasm // 2.905MB

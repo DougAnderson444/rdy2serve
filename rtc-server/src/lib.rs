@@ -21,8 +21,7 @@ struct Cli {
 }
 
 /// An example WebRTC server that will accept connections and run the ping protocol on them.
-#[tokio::main]
-async fn main() -> Result<()> {
+pub async fn start() -> Result<()> {
     let cli = Cli::parse();
 
     let mut swarm = create_swarm()?;

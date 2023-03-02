@@ -8,7 +8,12 @@ To run the example first run the server: `cargo run`
 $ cargo run
     Finished dev [unoptimized + debuginfo] target(s) in 0.21s
      Running `wasm-p2p-chat/target/debug/chat-server`
-Local peer id: PeerId("12D3KooWDvqnZSJ7ZkUTLmr1A2qGBKt5wi11gArpANDZWf8Pn7bX")
-Listening on "/ip4/127.0.0.1/tcp/9876/ws"
-Listening on "/ip4/192.168.178.94/tcp/9876/ws"
+New event: NewListenAddr { listener_id: ListenerId(3040073062497306654), address: "/ip6/2607:fea8:fec0:7337::d93a/udp/9876/webrtc/certhash/uEiAjxT-NGQq7HKKDSFeIXXLMgM2FmDSyw87tu5Cho-sGBg" }
+
+New event: NewListenAddr { listener_id: ListenerId(3040073062497306654), address: "/ip6/2607:fea8:fec0:7337:6b21:9df6:d46e:29d3/udp/9876/webrtc/certhash/uEiAjxT-NGQq7HKKDSFeIXXLMgM2FmDSyw87tu5Cho-sGBg" }
+
+New event: NewListenAddr { listener_id: ListenerId(3040073062497306654), address: "/ip6/2607:fea8:fec0:7337:e1ca:a3e1:6b08:5d94/udp/9876/webrtc/certhash/uEiAjxT-NGQq7HKKDSFeIXXLMgM2FmDSyw87tu5Cho-sGBg" }
+
+New event: NewListenAddr { listener_id: ListenerId(3040073062497306654), address: "/ip6/::1/udp/9876/webrtc/certhash/uEiAjxT-NGQq7HKKDSFeIXXLMgM2FmDSyw87tu5Cho-sGBg" }
+
 ```

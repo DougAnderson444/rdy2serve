@@ -1,0 +1,15 @@
+[workspace]
+members = [
+#   "rtc-client",
+  "rtc-server",
+]
+
+[profile.release]
+# opt-level = 2 # fast and small wasm // 2.905MB
+opt-level = 'z' # optimize for size instead of speed // 2.51 MB
+# opt-level = "s" # optimize for size instead of speed // 2.597 MB
+lto = true
+
+[profile.dev]
+debug = 2
+opt-level = 0

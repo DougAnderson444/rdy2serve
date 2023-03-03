@@ -1,0 +1,6 @@
+## https://github.com/thedodd/trunk/blob/master/Trunk.toml
+
+[build]
+# public_url = "/my-leptos-pages-kit/"
+# Whether to include hash values in the output file names.
+filehash = false # so we can link it in our Vite app

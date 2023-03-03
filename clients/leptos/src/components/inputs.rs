@@ -35,7 +35,10 @@ pub fn ControlledComponent(cx: Scope) -> impl IntoView {
 }
 
 #[component]
-pub fn UncontrolledComponent(cx: Scope) -> impl IntoView {
+pub fn UncontrolledComponent<F>(cx: Scope, on_set: F) -> impl IntoView
+where
+    F: Fn(String) + 'static,
+{
     // import the type for <input>
     use leptos::html::Input;
 
@@ -60,12 +63,13 @@ pub fn UncontrolledComponent(cx: Scope) -> impl IntoView {
             // this means we can call`HtmlInputElement::value()`
             // to get the current value of the input
             .value();
-        set_name(value);
+        set_name(value.clone());
+        on_set(value);
     };
 
     view! { cx,
         <div class="flex">
-            <input type="text" class="flex-1 border p-2 mx-2 rounded"
+            <input type="text" class="flex-1 border p-2 mx-2 rounded font-mono text-xs"
                 // here, we use the `value` *attribute* to set only
                 // the initial value, letting the browser maintain
                 // the state after that
@@ -78,8 +82,6 @@ pub fn UncontrolledComponent(cx: Scope) -> impl IntoView {
                 "Go!"
             </button>
         </div>
-        <div class="break-words">
-            <p>"Name is: " {name}</p>
-        </div>
+
     }
 }

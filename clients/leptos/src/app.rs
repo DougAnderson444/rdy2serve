@@ -34,13 +34,21 @@ pub fn App(cx: Scope) -> impl IntoView {
 #[component]
 fn HomePage(cx: Scope) -> impl IntoView {
     // Creates a reactive value to update the button
-    let (count, set_count) = create_signal(cx, 0);
-    // let on_click = move |_| set_count.update(|count| *count += 1);
+    let (addr, set_addr) = create_signal(cx, "Unset Yet".to_string());
 
     view! { cx,
         <div class="p-2">
-            <h1>"Welcome to Chat WebRTC! Enter Server Multiaddress:"</h1>
-            <UncontrolledComponent />
+            <h1 class="text-xl font-semibold mt-3 mb-2">
+                "Welcome to Rust Chat WebRTC LibP2P!"
+            </h1>
+            <h2 class="font-semibold mt-3 mb-2">
+                "Enter Server Multiaddress:"
+            </h2>
+            <UncontrolledComponent on_set=set_addr />
+
+            <div class="border rounded p-2 m-2">
+                <p>"Connecting to Address: "<span class="break-words font-mono text-xs">{addr}</span> </p>
+            </div>
         </div>
     }
 }

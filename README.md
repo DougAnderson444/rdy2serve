@@ -1,6 +1,6 @@
 # Rdy2Serve
 
-A [Libp2p](https://docs.rs/crate/libp2p) Webrtc Server
+A [Libp2p](https://docs.rs/crate/libp2p) Webrtc Server (& chat app)
 
 True peer to peer communications.
 

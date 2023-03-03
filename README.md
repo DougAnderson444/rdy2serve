@@ -1,4 +1,4 @@
-# Ready2Serve
+# Rdy2Serve
 
 A [Libp2p](https://docs.rs/crate/libp2p) Webrtc Server
 

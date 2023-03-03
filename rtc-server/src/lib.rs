@@ -1,3 +1,6 @@
+// Copyright (C) 2023 Doug Anderson
+// SPDX-License-Identifier: MIT
+
 use anyhow::Result;
 use clap::Parser;
 use futures::StreamExt;

@@ -16,6 +16,28 @@ Main package is a binary that runs the WebRTC Server.
 
 This library is accessed by the main workspace package.
 
-## [TODO] RTC-Client - Run Web Client
+## Clients - Run Web Clients
+
+Compile Leptos to wasm and watch using [Trunk](https://trunkrs.dev/):
+
+```bash
+$ cd clients/leptos
+$ trunk watch --features=hydrate
+```
+
+Extract the Tailwindcss:
+
+```bash
+$ cd clients/leptos
+$ npx tailwindcss -i ./style/input.css -o ./style/output.css  --watch
+$ npx tailwindcss -i ./style/input.css -o ../sveltekit/static/output.css --watch
+```
+
+Run as a Svelte App:
+
+```bash
+$ cd clients/sveltekit
+$ npm run dev
+```
 
 The client is a Leptos app which allows you to connect to the server and chat.

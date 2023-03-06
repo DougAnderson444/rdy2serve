@@ -39,14 +39,24 @@ pub async fn start() -> Result<()> {
     loop {
         match swarm.select_next_some().await {
             SwarmEvent::NewListenAddr { address, .. } => {
-                println!("Listening on {address:?}");
-                let mut full_address = address.to_string().to_owned()
-                    + "/p2p/"
-                    + &swarm.local_peer_id().to_string().to_owned();
+                // check if address string contains "::" at all, if so skip the connection prompt
+                if !address.to_string().contains("::") {
+                    // add p2p PeerId to address as p2p Protocol
+                    let full_address = address
+                        .with(Protocol::P2p(*swarm.local_peer_id().as_ref()))
+                        .to_string();
 
-                println!("\nConnect to: {full_address:?}");
+                    eprintln!("\nConnect with: {full_address}");
+                }
             }
-            event => eprintln!("\nNew event: {event:?}"),
+            SwarmEvent::Behaviour(BehaviourEvent::Ping(ping::Event {
+                peer,
+                result: Ok(ping::Success::Ping { rtt }),
+            })) => {
+                let id = peer.to_string().to_owned();
+                eprintln!("Pinged {id} ({rtt:?})")
+            }
+            event => log::debug!("********* Event: \n{event:?}\n"),
         }
     }
 }
@@ -71,11 +81,7 @@ fn create_swarm() -> Result<Swarm<Behaviour>> {
 }
 
 #[derive(NetworkBehaviour, Default)]
-#[behaviour(
-    out_event = "Event",
-    event_process = false,
-    prelude = "libp2p_swarm::derive_prelude"
-)]
+#[behaviour(event_process = false, prelude = "libp2p_swarm::derive_prelude")]
 struct Behaviour {
     ping: ping::Behaviour,
     keep_alive: keep_alive::Behaviour,

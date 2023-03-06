@@ -1,8 +1,12 @@
 use anyhow::Result;
+use log::{debug, error, info};
 
 /// An example WebRTC server that will accept connections and run the ping protocol on them.
 #[tokio::main]
 async fn main() -> Result<()> {
+    // set up logging
+    env_logger::init();
+
     // spawn application as separate task
     let _handle = tokio::spawn(async {
         rtc_server::start().await.unwrap();

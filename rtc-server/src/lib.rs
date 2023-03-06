@@ -9,7 +9,7 @@ use libp2p::{
     identity,
     multiaddr::{Multiaddr, Protocol},
     ping,
-    swarm::{keep_alive, NetworkBehaviour, Swarm},
+    swarm::{keep_alive, NetworkBehaviour, Swarm, SwarmEvent},
     webrtc, Transport,
 };
 use rand::thread_rng;
@@ -37,8 +37,17 @@ pub async fn start() -> Result<()> {
     swarm.listen_on(address)?;
 
     loop {
-        let event = swarm.next().await.unwrap();
-        eprintln!("\nNew event: {event:?}")
+        match swarm.select_next_some().await {
+            SwarmEvent::NewListenAddr { address, .. } => {
+                println!("Listening on {address:?}");
+                let mut full_address = address.to_string().to_owned()
+                    + "/p2p/"
+                    + &swarm.local_peer_id().to_string().to_owned();
+
+                println!("\nConnect to: {full_address:?}");
+            }
+            event => eprintln!("\nNew event: {event:?}"),
+        }
     }
 }
 

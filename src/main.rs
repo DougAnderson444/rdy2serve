@@ -1,5 +1,4 @@
 use anyhow::Result;
-use log::{debug, error, info};
 
 /// An example WebRTC server that will accept connections and run the ping protocol on them.
 #[tokio::main]

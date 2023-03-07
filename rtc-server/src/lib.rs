@@ -5,7 +5,8 @@ use anyhow::Result;
 use clap::Parser;
 use futures::StreamExt;
 use libp2p::{
-    core::muxing::StreamMuxerBox,
+    core::{muxing::StreamMuxerBox, ConnectedPoint},
+    floodsub::{self, Floodsub, FloodsubEvent},
     identity,
     multiaddr::{Multiaddr, Protocol},
     ping,
@@ -46,22 +47,69 @@ pub async fn start() -> Result<()> {
                         .with(Protocol::P2p(*swarm.local_peer_id().as_ref()))
                         .to_string();
 
-                    eprintln!("\nConnect with: {full_address}");
+                    eprintln!("\nConnect with: \n{full_address}\n");
+                } else {
+                    println!("Listening on {address}");
                 }
             }
-            SwarmEvent::Behaviour(BehaviourEvent::Ping(ping::Event {
+            SwarmEvent::IncomingConnection { send_back_addr, .. } => {
+                eprintln!("➡️  Incoming Connection on {send_back_addr:?}")
+            }
+            SwarmEvent::ConnectionEstablished {
+                peer_id: _,
+                endpoint: ConnectedPoint::Listener { send_back_addr, .. },
+                established_in,
+                ..
+            } => {
+                eprintln!("✔️  Connection Established in {established_in:?} on {send_back_addr}")
+            }
+            SwarmEvent::Behaviour(OutEvent::Ping(ping::Event {
                 peer,
                 result: Ok(ping::Success::Ping { rtt }),
             })) => {
                 let id = peer.to_string().to_owned();
-                eprintln!("Pinged {id} ({rtt:?})")
+                eprintln!("🏐 Pinged {id} ({rtt:?})")
             }
-            event => log::debug!("********* Event: \n{event:?}\n"),
+            SwarmEvent::Behaviour(OutEvent::Ping(ping::Event {
+                peer,
+                result: Ok(ping::Success::Pong),
+            })) => {
+                let id = peer.to_string().to_owned();
+                eprintln!("🏓 Ponged by {id}")
+            }
+            SwarmEvent::Behaviour(OutEvent::Floodsub(FloodsubEvent::Message(message))) => {
+                println!(
+                    "Received: '{:?}' from {:?}",
+                    String::from_utf8_lossy(&message.data),
+                    message.source
+                );
+            }
+            SwarmEvent::ListenerClosed {
+                listener_id,
+                addresses,
+                reason,
+                ..
+            } => {
+                println!("❌👂 Listener Closed on {listener_id:?} b/c {reason:?}");
+
+                for address in addresses.iter() {
+                    println!("❌🏠 {address}");
+                }
+            }
+            SwarmEvent::ConnectionClosed { peer_id, .. } => {
+                println!("❌⛓️ Connection Closed to: {peer_id}");
+
+                swarm
+                    .behaviour_mut()
+                    .floodsub
+                    .remove_node_from_partial_view(&peer_id);
+            }
+            event => eprintln!("❗ Event: {event:?}\n"),
         }
     }
 }
 
-fn create_swarm() -> Result<Swarm<Behaviour>> {
+fn create_swarm() -> Result<Swarm<SuperChatBehaviour>> {
     let id_keys = identity::Keypair::generate_ed25519();
     let peer_id = id_keys.public().to_peer_id();
     let transport = webrtc::tokio::Transport::new(
@@ -73,33 +121,46 @@ fn create_swarm() -> Result<Swarm<Behaviour>> {
         .map(|(peer_id, conn), _| (peer_id, StreamMuxerBox::new(conn)))
         .boxed();
 
-    Ok(Swarm::with_tokio_executor(
-        transport,
-        Behaviour::default(),
-        peer_id,
-    ))
+    let floodsub_topic = floodsub::Topic::new("chat");
+
+    let mut behaviour = SuperChatBehaviour {
+        floodsub: Floodsub::new(peer_id),
+        ping: ping::Behaviour::default(),
+        keep_alive: keep_alive::Behaviour::default(),
+    };
+
+    behaviour.floodsub.subscribe(floodsub_topic);
+    Ok(Swarm::with_tokio_executor(transport, behaviour, peer_id))
 }
 
-#[derive(NetworkBehaviour, Default)]
-#[behaviour(event_process = false, prelude = "libp2p_swarm::derive_prelude")]
-struct Behaviour {
+#[derive(NetworkBehaviour)]
+#[behaviour(out_event = "OutEvent", prelude = "libp2p::swarm::derive_prelude")]
+struct SuperChatBehaviour {
     ping: ping::Behaviour,
+    floodsub: Floodsub,
     keep_alive: keep_alive::Behaviour,
 }
 
-#[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
-enum Event {
+#[derive(Debug)]
+enum OutEvent {
     Ping(ping::Event),
+    Floodsub(FloodsubEvent),
 }
 
-impl From<ping::Event> for Event {
-    fn from(e: ping::Event) -> Self {
-        Event::Ping(e)
+impl From<ping::Event> for OutEvent {
+    fn from(event: ping::Event) -> Self {
+        Self::Ping(event)
     }
 }
 
-impl From<Void> for Event {
+impl From<FloodsubEvent> for OutEvent {
+    fn from(event: FloodsubEvent) -> Self {
+        Self::Floodsub(event)
+    }
+}
+
+impl From<Void> for OutEvent {
     fn from(event: Void) -> Self {
         void::unreachable(event)
     }

@@ -6,7 +6,7 @@ True peer to peer communications.
 
 Browser-to-Browser coming once [the spec](https://github.com/libp2p/specs/issues/475) is complete.
 
-## Main Package
+## Main Application (Binary)
 
 Main package is a binary that runs the WebRTC Server.
 
@@ -16,7 +16,14 @@ Main package is a binary that runs the WebRTC Server.
 
 This library is accessed by the main workspace package.
 
-## Clients - Run Web Clients
+## Svelte Web Client
+
+```cli
+$ cd clients/sveltekit
+$ npm run dev
+```
+
+### Leptos + Svelte (Deprecated as it's too slow to develop)
 
 Compile Leptos to wasm and watch using [Trunk](https://trunkrs.dev/):
 

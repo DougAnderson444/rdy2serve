@@ -5,14 +5,14 @@ edition = "2021"
 
 [workspace]
 members = [
-  "clients/leptos",
+  # "clients/leptos",
   "rtc-server"
 ]
 
 [dependencies]
 anyhow = "1.0.69"
 rtc-server = { path = "rtc-server" }
-tokio = { version = "*"}
+tokio = "1.26.0"
 log = "0.4.17"
 env_logger = "0.10.0"
 

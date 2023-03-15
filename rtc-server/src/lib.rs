@@ -15,6 +15,7 @@ use libp2p::{
 };
 use rand::thread_rng;
 use std::net::Ipv6Addr;
+use tokio::sync::oneshot;
 use void::Void;
 
 #[derive(Debug, Parser)]
@@ -25,7 +26,8 @@ struct Cli {
 }
 
 /// An example WebRTC server that will accept connections and run the ping protocol on them.
-pub async fn start() -> Result<()> {
+pub async fn start(sender: oneshot::Sender<String>) -> Result<()> {
+    let mut sender = Some(sender);
     let cli = Cli::parse();
 
     let mut swarm = create_swarm()?;
@@ -35,11 +37,14 @@ pub async fn start() -> Result<()> {
         .with(Protocol::Udp(cli.port))
         .with(Protocol::WebRTC);
 
-    swarm.listen_on(address)?;
+    swarm.listen_on(address.clone())?;
 
     loop {
         match swarm.select_next_some().await {
-            SwarmEvent::NewListenAddr { address, .. } => {
+            SwarmEvent::NewListenAddr {
+                address,
+                listener_id,
+            } => {
                 // check if address string contains "::" at all, if so skip the connection prompt
                 if !address.to_string().contains("::") {
                     // add p2p PeerId to address as p2p Protocol
@@ -47,9 +52,12 @@ pub async fn start() -> Result<()> {
                         .with(Protocol::P2p(*swarm.local_peer_id().as_ref()))
                         .to_string();
 
-                    eprintln!("\nConnect with: \n{full_address}\n");
+                    // take the frst address assigned by the os
+                    if let Some(sender) = sender.take() {
+                        sender.send(full_address.clone()).unwrap();
+                    }
                 } else {
-                    println!("Listening on {address}");
+                    println!("\nListening on {address}\n {listener_id:?}");
                 }
             }
             SwarmEvent::IncomingConnection { send_back_addr, .. } => {
@@ -104,7 +112,7 @@ pub async fn start() -> Result<()> {
                     .floodsub
                     .remove_node_from_partial_view(&peer_id);
             }
-            event => eprintln!("❗ Event: {event:?}\n"),
+            event => eprintln!("🌟 Event: {event:?}\n"),
         }
     }
 }

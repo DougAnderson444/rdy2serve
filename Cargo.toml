@@ -15,6 +15,7 @@ rtc-server = { path = "rtc-server" }
 tokio = "1.26.0"
 log = "0.4.17"
 env_logger = "0.10.0"
+bytes = "1"
 
 [profile.release]
 # opt-level = 2 # fast and small wasm // 2.905MB

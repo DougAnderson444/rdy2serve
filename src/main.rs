@@ -1,27 +1,42 @@
 use anyhow::Result;
-use tokio::sync::oneshot;
+use rtc_server::{Message, ServerResponse};
+use tokio::sync::{mpsc, oneshot};
 
 /// An example WebRTC server that will accept connections and run the ping protocol on them.
+/// Start with `carfgo run`
+/// The Server will respond to channel messages with the Multiaddress of the listening protocol
 #[tokio::main]
 async fn main() -> Result<()> {
-    // set up logging
     env_logger::init();
-    let (sendr, recvr) = oneshot::channel::<String>();
+    // Initiating channel, which will send a Message asking for a reply with a ServerResponse in it
+    let (sendr, recvr) = mpsc::channel::<Message<ServerResponse>>(1);
 
-    // spawn application as separate task
+    log::debug!("> Spawning task for server!");
     let _handle = tokio::spawn(async move {
-        rtc_server::start(sendr).await.unwrap();
+        rtc_server::start(recvr).await.unwrap();
     });
 
-    // Await the response with the Address in it
-    let addr = recvr.await;
+    // Reply channel sends a ServerResponse back
+    let (reply_sender, reply_rcvr) = oneshot::channel::<ServerResponse>();
 
-    match addr {
-        Ok(a) => println!("\nConnect with: \n{a}"),
-        Err(e) => println!("Error getting IP multiaddress: {e}"),
+    // Q: What happens if this request is sent before the receiver is ready?
+    // A: Tokio holds all messages for us until the corresponding rcvr is setup!
+    log::debug!("> Send message!");
+    let _result = sendr
+        .send(Message::<ServerResponse> {
+            reply: reply_sender,
+        })
+        .await;
+
+    if let Ok(reply) = reply_rcvr.await {
+        let s: String = std::str::from_utf8(&reply.address).unwrap().into();
+        // Rust doesn't support octal character escape sequence
+        // For colors, use hexadecimal escape instead, plus a series of semicolon-separated parameters.
+        println!("Connect with: \n\x1b[30;1;42m{s}\x1b[0m");
     }
 
-    // Gracefully shutdown the spawned tokio task (Ctrl+C)
+    println!("\n*** To Shutdown, use Ctrl + C ***\n");
+
     match tokio::signal::ctrl_c().await {
         Ok(()) => {}
         Err(err) => {

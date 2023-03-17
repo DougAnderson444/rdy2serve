@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 use anyhow::Result;
+use bytes::Bytes;
 use clap::Parser;
 use futures::StreamExt;
 use libp2p::{
@@ -14,8 +15,10 @@ use libp2p::{
     webrtc, Transport,
 };
 use rand::thread_rng;
+use std::collections::HashMap;
 use std::net::Ipv6Addr;
-use tokio::sync::oneshot;
+use std::sync::{Arc, Mutex};
+use tokio::sync::{mpsc, oneshot};
 use void::Void;
 
 #[derive(Debug, Parser)]
@@ -25,9 +28,38 @@ struct Cli {
     port: u16,
 }
 
+#[derive(Debug, Clone)]
+pub struct ServerResponse {
+    pub address: Bytes,
+}
+
+pub struct Message<T> {
+    pub reply: Responder<T>,
+}
+
+type Responder<T> = oneshot::Sender<T>;
+
 /// An example WebRTC server that will accept connections and run the ping protocol on them.
-pub async fn start(sender: oneshot::Sender<String>) -> Result<()> {
-    let mut sender = Some(sender);
+pub async fn start(mut request_recvr: mpsc::Receiver<Message<ServerResponse>>) -> Result<()> {
+    // let mut config: Config = Config::default();
+    let config: Arc<Mutex<HashMap<String, Bytes>>> = Arc::new(Mutex::new(HashMap::new()));
+    let config_getter = config.clone();
+
+    // Spawn an API manager to receive incoming Requests
+    tokio::spawn(async move {
+        log::debug!(">>>> Reply listener spawned.");
+        while let Some(message) = request_recvr.recv().await {
+            let mut _addy = Bytes::new();
+            // ensure lock scope is limited
+            {
+                let config_getter = config_getter.lock().unwrap();
+                _addy = config_getter.get("address").unwrap().clone();
+            }
+            // ignore any errors
+            let _ = message.reply.send(ServerResponse { address: _addy });
+        }
+    });
+
     let cli = Cli::parse();
 
     let mut swarm = create_swarm()?;
@@ -40,10 +72,12 @@ pub async fn start(sender: oneshot::Sender<String>) -> Result<()> {
     swarm.listen_on(address.clone())?;
 
     loop {
+        let config_setter = config.clone();
+
         match swarm.select_next_some().await {
             SwarmEvent::NewListenAddr {
                 address,
-                listener_id,
+                listener_id: _,
             } => {
                 // check if address string contains "::" at all, if so skip the connection prompt
                 if !address.to_string().contains("::") {
@@ -52,12 +86,15 @@ pub async fn start(sender: oneshot::Sender<String>) -> Result<()> {
                         .with(Protocol::P2p(*swarm.local_peer_id().as_ref()))
                         .to_string();
 
-                    // take the frst address assigned by the os
-                    if let Some(sender) = sender.take() {
-                        sender.send(full_address.clone()).unwrap();
+                    let mut config_setter = config_setter.lock().unwrap();
+                    if config_setter.get("address").is_none() {
+                        log::debug!(">>>> Setting ADDRESS");
+
+                        config_setter
+                            .insert("address".to_owned(), Bytes::from(full_address.clone()));
                     }
                 } else {
-                    println!("\nListening on {address}\n {listener_id:?}");
+                    log::info!("Listening on {address}");
                 }
             }
             SwarmEvent::IncomingConnection { send_back_addr, .. } => {

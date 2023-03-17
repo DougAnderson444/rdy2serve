@@ -2558,6 +2558,7 @@ name = "rdy2serve"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytes",
  "env_logger",
  "log",
  "rtc-server",
@@ -2631,6 +2632,7 @@ name = "rtc-server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytes",
  "clap",
  "futures",
  "libp2p",

@@ -43,20 +43,20 @@ type Responder<T> = oneshot::Sender<T>;
 pub async fn start(mut request_recvr: mpsc::Receiver<Message<ServerResponse>>) -> Result<()> {
     // let mut config: Config = Config::default();
     let config: Arc<Mutex<HashMap<String, Bytes>>> = Arc::new(Mutex::new(HashMap::new()));
-    let config_getter = config.clone();
+    let config_getter = Arc::clone(&config);
 
     // Spawn an API manager to receive incoming Requests
     tokio::spawn(async move {
         log::debug!(">>>> Reply listener spawned.");
+        fn lock_get(cfg: &Arc<Mutex<HashMap<String, Bytes>>>, key: &str) -> Bytes {
+            let lock = cfg.lock().unwrap();
+            lock.get(key).unwrap().clone()
+        }
+
         while let Some(message) = request_recvr.recv().await {
-            let mut _addy = Bytes::new();
-            // ensure lock scope is limited
-            {
-                let config_getter = config_getter.lock().unwrap();
-                _addy = config_getter.get("address").unwrap().clone();
-            }
+            let address = lock_get(&config_getter, "address");
             // ignore any errors
-            let _ = message.reply.send(ServerResponse { address: _addy });
+            let _ = message.reply.send(ServerResponse { address });
         }
     });
 
@@ -72,7 +72,7 @@ pub async fn start(mut request_recvr: mpsc::Receiver<Message<ServerResponse>>) -
     swarm.listen_on(address.clone())?;
 
     loop {
-        let config_setter = config.clone();
+        let config_setter = Arc::clone(&config);
 
         match swarm.select_next_some().await {
             SwarmEvent::NewListenAddr {

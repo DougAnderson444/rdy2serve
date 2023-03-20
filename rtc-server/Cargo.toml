@@ -17,9 +17,11 @@ log = "0.4.17"
 bytes = "1"
 
 [dependencies.libp2p]
+# path = "../../rust-libp2p/libp2p" # fork
 version = "0.51.1"
 features = [
-    "floodsub",
+    "gossipsub",
+    "identify",
     "macros",
     "noise",
     "tokio",

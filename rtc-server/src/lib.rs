@@ -91,16 +91,12 @@ pub async fn start(mut request_recvr: mpsc::Receiver<Message<ServerResponse>>) -
 
         // Set a custom gossipsub configuration
         let gossipsub_config = gossipsub::ConfigBuilder::default()
-            .mesh_n_low(2)
+            .mesh_n_low(2) // experiment to see if this matters for WebRTC
             .heartbeat_initial_delay(Duration::from_secs(1))
             .check_explicit_peers_ticks(1)
             .heartbeat_interval(Duration::from_secs(5)) // This is set to aid debugging by not cluttering the log space
             .validation_mode(gossipsub::ValidationMode::Strict) // This sets the kind of message validation. The default is Strict (enforce message signing)
             .message_id_fn(message_id_fn) // content-address messages. No two messages of the same content will be propagated.
-            // one of the 10 second timeouts is killing the Connection
-            // .unsubscribe_backoff(30)
-            // .graft_flood_threshold(Duration::from_secs(30))
-            // .published_message_ids_cache_time(Duration::from_secs(30))
             .build()
             .expect("Valid config");
 
@@ -110,8 +106,6 @@ pub async fn start(mut request_recvr: mpsc::Receiver<Message<ServerResponse>>) -
                 gossipsub_config,
             )
             .expect("Valid configuration"),
-            // ping: ping::Behaviour::new(Config::new().with_interval(Duration::new(1, 0))),
-            // keep_alive: keep_alive::Behaviour::default(),
         };
 
         behaviour.gossipsub.subscribe(&gossipsub_topic).unwrap();
@@ -163,34 +157,20 @@ pub async fn start(mut request_recvr: mpsc::Receiver<Message<ServerResponse>>) -
             } => {
                 eprintln!("✔️  Connection Established to {peer_id} in {established_in:?} on {send_back_addr}");
                 // This dial doesn't work, but it's the only way I can get the gossipsub to connect...
-                let mut res = send_back_addr;
-                strip_peer_id(&mut res);
+                // let mut res = send_back_addr;
+                // strip_peer_id(&mut res);
 
-                eprintln!("📞  Dialing {res}");
+                // eprintln!("📞  Dialing {res}");
 
-                let dial_opts = DialOpts::unknown_peer_id()
-                    // .condition(PeerCondition::NotDialing)
-                    .address(res.clone())
-                    // .extend_addresses_through_behaviour()
-                    .build();
-                if let Err(e) = swarm.dial(dial_opts) {
-                    println!("Dialing error: {e:?}");
-                }
+                // let dial_opts = DialOpts::unknown_peer_id()
+                //     // .condition(PeerCondition::NotDialing)
+                //     .address(res.clone())
+                //     // .extend_addresses_through_behaviour()
+                //     .build();
+                // if let Err(e) = swarm.dial(dial_opts) {
+                //     println!("Dialing error: {e:?}");
+                // }
                 // swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id)
-            }
-            SwarmEvent::Behaviour(OutEvent::Ping(ping::Event {
-                peer,
-                result: Ok(ping::Success::Ping { rtt }),
-            })) => {
-                let id = peer.to_string().to_owned();
-                eprintln!("🏐 Pinged {id} ({rtt:?})")
-            }
-            SwarmEvent::Behaviour(OutEvent::Ping(ping::Event {
-                peer,
-                result: Ok(ping::Success::Pong),
-            })) => {
-                let id = peer.to_string().to_owned();
-                eprintln!("🏓 Ponged by {id}")
             }
             SwarmEvent::Behaviour(OutEvent::Gossipsub(gossipsub::Event::Message {
                 propagation_source: peer_id,
@@ -201,15 +181,15 @@ pub async fn start(mut request_recvr: mpsc::Receiver<Message<ServerResponse>>) -
                     "📨 Got message: '{}' with id: {id} from peer: {peer_id}",
                     String::from_utf8_lossy(&message.data),
                 );
-                let msg = make_msg(&peer_id.to_base58());
 
-                if let Err(e) = swarm
-                    .behaviour_mut()
-                    .gossipsub
-                    .publish(gossipsub_topic.clone(), msg.as_bytes())
-                {
-                    println!("❌  Reply Publish error: {e:?}, message: {msg}");
-                }
+                // let msg = make_msg(&peer_id.to_base58());
+                // if let Err(e) = swarm
+                //     .behaviour_mut()
+                //     .gossipsub
+                //     .publish(gossipsub_topic.clone(), msg.as_bytes())
+                // {
+                //     println!("❌  Reply Publish error: {e:?}, message: {msg}");
+                // }
             }
             SwarmEvent::Behaviour(OutEvent::Gossipsub(gossipsub::Event::Subscribed {
                 peer_id,
@@ -270,23 +250,15 @@ pub async fn start(mut request_recvr: mpsc::Receiver<Message<ServerResponse>>) -
 #[derive(NetworkBehaviour)]
 #[behaviour(out_event = "OutEvent", prelude = "libp2p::swarm::derive_prelude")]
 struct SuperChatBehaviour {
-    // ping: ping::Behaviour,
     gossipsub: gossipsub::Behaviour,
-    // keep_alive: keep_alive::Behaviour,
 }
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 enum OutEvent {
-    Ping(ping::Event),
     Gossipsub(gossipsub::Event),
 }
 
-impl From<ping::Event> for OutEvent {
-    fn from(event: ping::Event) -> Self {
-        Self::Ping(event)
-    }
-}
 impl From<gossipsub::Event> for OutEvent {
     fn from(event: gossipsub::Event) -> Self {
         OutEvent::Gossipsub(event)
@@ -314,6 +286,7 @@ fn strip_peer_id(addr: &mut Multiaddr) {
     }
 }
 
+// Make unique messages to reply with
 fn make_msg(str: &str) -> String {
     let now = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)

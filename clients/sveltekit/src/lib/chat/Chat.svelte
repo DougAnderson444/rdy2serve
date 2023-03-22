@@ -25,6 +25,7 @@
     let libp2pReady
     let handleConnect
     let onSubmit
+    let peer
 
     const destroy = async () => {
         clearInterval(pingIntervalID)
@@ -37,6 +38,8 @@
     onMount(async () => {
         console.log("Mounted")
         let period = 5000
+        let retries = 3
+        let retry = 0
 
         const output = document.getElementById("output")
         const sendSection = document.getElementById("send-section")
@@ -47,6 +50,12 @@
         }
         const clean = (line) => line.replaceAll("\n", "")
         const sender = pushable()
+
+        // networking debug logs
+        localStorage.setItem(
+            "debug",
+            "libp2p:webrtc:connection,libp2p:webrtc:transport,libp2p:webrtc:stream,libp2p:dialer,libp2p:webrtc:sdp"
+        )
 
         libp2p = await createLibp2p({
             transports: [webRTC()],
@@ -89,7 +98,7 @@
                     .map((c) => c.remoteAddr.toString())}'`
             )
             sendSection.style.display = "block"
-            await libp2p.pubsub.subscribe(topic)
+            // await libp2p.pubsub.subscribe(topic)
             doPing()
         })
 
@@ -108,17 +117,11 @@
             )} on topic ${evt.detail.topic}, sending replies`
             console.log(msg)
             appendOutput(msg)
+            doPing()
             // pingIntervalID = setInterval(doPing, period)
         })
 
-        handleConnect = async () => {
-            ma = multiaddr(window.peer.value)
-            // appendOutput(`Dialing '${ma}'`)
-
-            const remotePeerId = peerIdFromString(ma.getPeerId())
-
-            await libp2p.peerStore.addressBook.set(remotePeerId, [ma])
-
+        const tryDial = async () => {
             /**
              * protocols: [
              * "/floodsub/1.0.0", // do not use
@@ -127,34 +130,30 @@
              * "/ipfs/ping/1.0.0",
              * "/libp2p/circuit/relay/0.1.0",
              * "/libp2p/fetch/0.0.1",
-             * "/meshsub/1.0.0",
-             * "/meshsub/1.1.0"]
+             * "/meshsub/1.0.0", // gossipsub
+             * "/meshsub/1.1.0"] // included by defalt in rust-libp2p
              * */
             try {
+                // await libp2p.dial(ma)
                 stream = await libp2p.dialProtocol(ma, [
                     // "/ipfs/ping/1.0.0",
                     "/meshsub/1.1.0",
                 ])
                 console.log({ stream }) // WebRTC Stream
             } catch (error) {
-                console.warn("Dial failed", error)
+                console.warn("Dial did not go as planed", error)
             }
+        }
 
-            // await libp2p.pubsub.subscribe(topic)
+        handleConnect = async () => {
+            ma = multiaddr(peer)
+            appendOutput(`Dialing...`)
 
-            // stream = await libp2p.dialProtocol(ma, [
-            //     "/ipfs/ping/1.0.0",
-            //     // "/ipfs/id/1.0.0",
-            //     // "ipfs/0.1.0",
-            //     // "/gossipsub/1.0.0",
-            // ])
+            const remotePeerId = peerIdFromString(ma.getPeerId())
 
-            // pipe(sender, stream, async (src) => {
-            //     for await (const buf of src) {
-            //         const response = toString(buf.subarray())
-            //         appendOutput(`Received message '${clean(response)}'`)
-            //     }
-            // })
+            await libp2p.peerStore.addressBook.set(remotePeerId, [ma])
+
+            tryDial()
         }
 
         onSubmit = async () => {
@@ -178,25 +177,27 @@
     Below we mount the `Leptos` app, which is build with Trunk, which runs
     main() in main.rs which calls hydrate from the app library
 </p> -->
-<h1 class="text-3xl m-2 font-bold">Chat {libp2p?.peerId}</h1>
+<h1 class="text-3xl m-2 font-bold">Chat</h1>
+<span class="text-lg m-2 font-bold">{libp2p?.peerId}</span>
 
-<div id="app" class="m-4">
-    <div class="flex items-center">
+<div id="app" class="m-4" on:submit|preventDefault={handleConnect}>
+    <form class="flex items-center">
         <label for="peer">Server MultiAddress:</label>
         <input
             type="text"
             id="peer"
+            bind:value={peer}
             class="flex-1 border p-3 mx-2 rounded font-mono text-xs"
         />
         {#if libp2pReady}
-            <button
+            <input
+                type="submit"
                 id="connect"
-                on:click={handleConnect}
+                value="Connect"
                 class="flex-initial border bg-green-500 rounded outline-none text-white p-2 mx-2"
-                >Connect</button
-            >
+            />
         {/if}
-    </div>
+    </form>
     <form id="send-section" class="flex" on:submit|preventDefault={onSubmit}>
         <label for="message">Message:</label>
         <input

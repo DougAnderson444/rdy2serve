@@ -1,7 +1,7 @@
 <script>
     // @ts-nocheck
 
-    import { onMount } from "svelte"
+    import { onMount, onDestroy } from "svelte"
 
     // imports to connect via @libp2p/webrtc (Javascript)
     import { createLibp2p } from "libp2p"
@@ -18,11 +18,24 @@
     import { peerIdFromString } from "@libp2p/peer-id"
 
     const topic = "chat"
+    let pingIntervalID
+    let libp2p
+    let ma
+    let stream
+    let libp2pReady
+    let handleConnect
+    let onSubmit
+
+    const destroy = async () => {
+        clearInterval(pingIntervalID)
+        if (stream) stream.close()
+        if (libp2p) await libp2p.stop()
+    }
+
+    onDestroy(destroy)
 
     onMount(async () => {
-        let stream
-        let pingIntervalID
-        let libp2p
+        console.log("Mounted")
         let period = 5000
 
         const output = document.getElementById("output")
@@ -35,49 +48,74 @@
         const clean = (line) => line.replaceAll("\n", "")
         const sender = pushable()
 
-        window.connect.onclick = async () => {
-            const ma = multiaddr(window.peer.value)
+        libp2p = await createLibp2p({
+            transports: [webRTC()],
+            connectionEncryption: [noise()],
+            // we add the Pubsub module we want
+            pubsub: gossipsub({
+                allowPublishToZeroPeers: true,
+                // emitSelf: true,
+                // directPeers: [{ id: remotePeerId, addrs: [ma] }],
+            }),
+        })
+
+        await libp2p.start()
+        await libp2p.pubsub.subscribe(topic)
+
+        const doPing = async () => {
+            // sender.push(fromString("a message from JS"))
+            // try {
+            //     const latency = await libp2p.ping(ma)
+            //     console.log({ latency })
+            // } catch (error) {
+            //     console.warn("This ping failed", error)
+            //     clearInterval(pingIntervalID)
+            //     // pingIntervalID = setInterval(doPing, period)
+            // }
+            let msg = "Bird bird bird, bird is the word!"
+            console.log(`Sending msg: ${msg}`)
+            libp2p.pubsub
+                .publish(topic, uint8ArrayFromString(msg))
+                .catch((err) => {
+                    console.error(err)
+                })
+        }
+
+        libp2p.addEventListener("peer:connect", async (connection) => {
+            console.log("peer connected", { connection })
+            appendOutput(
+                `Peer connected '${libp2p
+                    .getConnections()
+                    .map((c) => c.remoteAddr.toString())}'`
+            )
+            sendSection.style.display = "block"
+            await libp2p.pubsub.subscribe(topic)
+            doPing()
+        })
+
+        libp2p.addEventListener("peer:disconnect", (connection) => {
+            console.log("Disconected", { connection })
+            clearInterval(pingIntervalID)
+
+            appendOutput(`Peer disconnected`)
+            sendSection.style.display = "none"
+        })
+
+        libp2p.pubsub.addEventListener("message", (evt) => {
+            console.log({ evt })
+            let msg = `*** Gossipsub received: ${uint8ArrayToString(
+                evt.detail.data
+            )} on topic ${evt.detail.topic}, sending replies`
+            console.log(msg)
+            appendOutput(msg)
+            // pingIntervalID = setInterval(doPing, period)
+        })
+
+        handleConnect = async () => {
+            ma = multiaddr(window.peer.value)
             // appendOutput(`Dialing '${ma}'`)
 
             const remotePeerId = peerIdFromString(ma.getPeerId())
-
-            libp2p = await createLibp2p({
-                transports: [webRTC()],
-                connectionEncryption: [noise()],
-                // we add the Pubsub module we want
-                pubsub: gossipsub({
-                    allowPublishToZeroPeers: true,
-                    // emitSelf: true,
-                    directPeers: [{ id: remotePeerId, addrs: [ma] }],
-                }),
-            })
-
-            await libp2p.start()
-
-            libp2p.addEventListener("peer:connect", (connection) => {
-                appendOutput(
-                    `Peer connected '${libp2p
-                        .getConnections()
-                        .map((c) => c.remoteAddr.toString())}'`
-                )
-                sendSection.style.display = "block"
-            })
-
-            libp2p.addEventListener("peer:disconnect", (connection) => {
-                console.log("Disconected", { connection })
-                clearInterval(pingIntervalID)
-
-                appendOutput(`Peer disconnected`)
-                sendSection.style.display = "none"
-            })
-
-            libp2p.pubsub.addEventListener("message", (evt) => {
-                console.log({ evt })
-                let msg = `*** Gossipsub received: ${uint8ArrayToString(
-                    evt.detail.data
-                )} on topic ${evt.detail.topic}`
-                appendOutput(msg)
-            })
 
             await libp2p.peerStore.addressBook.set(remotePeerId, [ma])
 
@@ -93,15 +131,16 @@
              * "/meshsub/1.1.0"]
              * */
             try {
-                await libp2p.dialProtocol(ma, [
-                    "/ipfs/ping/1.0.0",
+                stream = await libp2p.dialProtocol(ma, [
+                    // "/ipfs/ping/1.0.0",
                     "/meshsub/1.1.0",
                 ])
+                console.log({ stream }) // WebRTC Stream
             } catch (error) {
                 console.warn("Dial failed", error)
             }
 
-            await libp2p.pubsub.subscribe(topic)
+            // await libp2p.pubsub.subscribe(topic)
 
             // stream = await libp2p.dialProtocol(ma, [
             //     "/ipfs/ping/1.0.0",
@@ -116,31 +155,9 @@
             //         appendOutput(`Received message '${clean(response)}'`)
             //     }
             // })
-
-            // also ping the Server
-            const doPing = async () => {
-                // sender.push(fromString("a message from JS"))
-                try {
-                    const latency = await libp2p.ping(ma)
-                    console.log({ latency })
-                } catch (error) {
-                    console.warn("This ping failed", error)
-                    clearInterval(pingIntervalID)
-                    // pingIntervalID = setInterval(doPing, period)
-                }
-                let msg = "Bird bird bird, bird is the word!"
-                console.log(`Sending msg: ${msg}`)
-                libp2p.pubsub
-                    .publish(topic, uint8ArrayFromString(msg))
-                    .catch((err) => {
-                        console.error(err)
-                    })
-            }
-            doPing()
-            pingIntervalID = setInterval(doPing, period)
         }
 
-        window.send.onclick = async () => {
+        onSubmit = async () => {
             const message = `${window.message.value}\n`
             appendOutput(`Sending message '${clean(message)}'`)
             libp2p.pubsub
@@ -149,12 +166,10 @@
                     console.error(err)
                 })
         }
+        console.log("Ready")
 
-        // onDestroy:
-        return async () => {
-            clearInterval(pingIntervalID)
-            await libp2p.stop()
-        }
+        libp2pReady = true
+        return destroy
     })
 </script>
 
@@ -163,7 +178,7 @@
     Below we mount the `Leptos` app, which is build with Trunk, which runs
     main() in main.rs which calls hydrate from the app library
 </p> -->
-<h1 class="text-3xl m-2 font-bold">Chat</h1>
+<h1 class="text-3xl m-2 font-bold">Chat {libp2p?.peerId}</h1>
 
 <div id="app" class="m-4">
     <div class="flex items-center">
@@ -173,13 +188,16 @@
             id="peer"
             class="flex-1 border p-3 mx-2 rounded font-mono text-xs"
         />
-        <button
-            id="connect"
-            class="flex-initial border bg-green-500 rounded outline-none text-white p-2 mx-2"
-            >Connect</button
-        >
+        {#if libp2pReady}
+            <button
+                id="connect"
+                on:click={handleConnect}
+                class="flex-initial border bg-green-500 rounded outline-none text-white p-2 mx-2"
+                >Connect</button
+            >
+        {/if}
     </div>
-    <div id="send-section" class="flex">
+    <form id="send-section" class="flex" on:submit|preventDefault={onSubmit}>
         <label for="message">Message:</label>
         <input
             type="text"
@@ -187,12 +205,13 @@
             value="hello"
             class="flex-1 border p-2 mx-2 rounded font-mono text-xs"
         />
-        <button
+        <input
+            type="submit"
             id="send"
+            value="Send"
             class="flex-initial border bg-green-500 rounded outline-none text-white p-2 mx-2"
-            >Send</button
-        >
-    </div>
+        />
+    </form>
     <div id="output" />
 </div>
 

@@ -7,4 +7,4 @@
 # The value of this environment variable is a comma-separated list of logging directives
 
 # https://docs.rs/env_logger/0.10.0/env_logger/#enabling-logging
-RUST_LOG = "rdy2serve,rtc_server,libp2p=debug" # libp2p_webrtc::tokio
+RUST_LOG = "rdy2serve,rtc_server,libp2p=debug,libp2p_noise=off,libp2p_webrtc::tokio::udp_mux=off" # libp2p_webrtc::tokio

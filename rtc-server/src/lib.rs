@@ -16,11 +16,13 @@ use libp2p::{
     },
     webrtc, PeerId, Transport,
 };
+use log::debug;
 use rand::thread_rng;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::net::Ipv6Addr;
 use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 use std::{collections::HashMap, time::Duration};
 use tokio::sync::{mpsc, oneshot};
 use void::Void;
@@ -89,9 +91,12 @@ pub async fn start(mut request_recvr: mpsc::Receiver<Message<ServerResponse>>) -
 
         // Set a custom gossipsub configuration
         let gossipsub_config = gossipsub::ConfigBuilder::default()
-            .heartbeat_interval(Duration::from_secs(12)) // This is set to aid debugging by not cluttering the log space
+            .mesh_n_low(2)
+            .heartbeat_initial_delay(Duration::from_secs(1))
+            .check_explicit_peers_ticks(1)
+            .heartbeat_interval(Duration::from_secs(5)) // This is set to aid debugging by not cluttering the log space
             .validation_mode(gossipsub::ValidationMode::Strict) // This sets the kind of message validation. The default is Strict (enforce message signing)
-            // .message_id_fn(message_id_fn) // content-address messages. No two messages of the same content will be propagated.
+            .message_id_fn(message_id_fn) // content-address messages. No two messages of the same content will be propagated.
             // one of the 10 second timeouts is killing the Connection
             // .unsubscribe_backoff(30)
             // .graft_flood_threshold(Duration::from_secs(30))
@@ -105,8 +110,8 @@ pub async fn start(mut request_recvr: mpsc::Receiver<Message<ServerResponse>>) -
                 gossipsub_config,
             )
             .expect("Valid configuration"),
-            ping: ping::Behaviour::new(Config::new().with_interval(Duration::new(1, 0))),
-            keep_alive: keep_alive::Behaviour::default(),
+            // ping: ping::Behaviour::new(Config::new().with_interval(Duration::new(1, 0))),
+            // keep_alive: keep_alive::Behaviour::default(),
         };
 
         behaviour.gossipsub.subscribe(&gossipsub_topic).unwrap();
@@ -116,7 +121,7 @@ pub async fn start(mut request_recvr: mpsc::Receiver<Message<ServerResponse>>) -
 
     // Listen for connections on the given port.
     let address = Multiaddr::from(Ipv6Addr::UNSPECIFIED)
-        .with(Protocol::Udp(cli.port))
+        .with(Protocol::Udp(0))
         .with(Protocol::WebRTC);
 
     let _id = swarm.listen_on(address.clone())?;
@@ -157,27 +162,26 @@ pub async fn start(mut request_recvr: mpsc::Receiver<Message<ServerResponse>>) -
                 ..
             } => {
                 eprintln!("✔️  Connection Established to {peer_id} in {established_in:?} on {send_back_addr}");
-                let dial_opts = DialOpts::peer_id(PeerId::random())
-                    .condition(PeerCondition::NotDialing)
-                    .addresses(vec![send_back_addr.clone()])
-                    .extend_addresses_through_behaviour()
+                // This dial doesn't work, but it's the only way I can get the gossipsub to connect...
+                let mut res = send_back_addr;
+                strip_peer_id(&mut res);
+
+                eprintln!("📞  Dialing {res}");
+
+                let dial_opts = DialOpts::unknown_peer_id()
+                    // .condition(PeerCondition::NotDialing)
+                    .address(res.clone())
+                    // .extend_addresses_through_behaviour()
                     .build();
                 if let Err(e) = swarm.dial(dial_opts) {
                     println!("Dialing error: {e:?}");
                 }
-                swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id)
+                // swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id)
             }
             SwarmEvent::Behaviour(OutEvent::Ping(ping::Event {
                 peer,
                 result: Ok(ping::Success::Ping { rtt }),
             })) => {
-                // if let Err(e) = swarm
-                //     .behaviour_mut()
-                //     .gossipsub
-                //     .publish(gossipsub_topic.clone(), "Hey there Subscriber".as_bytes())
-                // {
-                //     println!("Publish error: {e:?}");
-                // }
                 let id = peer.to_string().to_owned();
                 eprintln!("🏐 Pinged {id} ({rtt:?})")
             }
@@ -186,7 +190,6 @@ pub async fn start(mut request_recvr: mpsc::Receiver<Message<ServerResponse>>) -
                 result: Ok(ping::Success::Pong),
             })) => {
                 let id = peer.to_string().to_owned();
-                // swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer);
                 eprintln!("🏓 Ponged by {id}")
             }
             SwarmEvent::Behaviour(OutEvent::Gossipsub(gossipsub::Event::Message {
@@ -197,21 +200,47 @@ pub async fn start(mut request_recvr: mpsc::Receiver<Message<ServerResponse>>) -
                 println!(
                     "📨 Got message: '{}' with id: {id} from peer: {peer_id}",
                     String::from_utf8_lossy(&message.data),
-                )
+                );
+                let msg = make_msg(&peer_id.to_base58());
+
+                if let Err(e) = swarm
+                    .behaviour_mut()
+                    .gossipsub
+                    .publish(gossipsub_topic.clone(), msg.as_bytes())
+                {
+                    println!("❌  Reply Publish error: {e:?}, message: {msg}");
+                }
             }
             SwarmEvent::Behaviour(OutEvent::Gossipsub(gossipsub::Event::Subscribed {
                 peer_id,
                 topic, // : gossipsub::TopicHash { hash },
             })) => {
                 println!("💨💨💨  {topic:?} Subscriber: {peer_id}");
-                // swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
+
+                // show peers and stuff
+                let p = swarm
+                    .behaviour()
+                    .gossipsub
+                    .all_mesh_peers()
+                    .cloned()
+                    .collect::<Vec<_>>();
+
+                let num = p.len();
+
+                debug!("### Number peers: {num:?} ### ");
+
+                p.iter().map(|p| println!("Peer: {p:?}")).for_each(drop);
+
+                swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
+
+                let msg = make_msg(&peer_id.to_base58());
 
                 if let Err(e) = swarm
                     .behaviour_mut()
                     .gossipsub
-                    .publish(gossipsub_topic.clone(), "Hey there Subscriber".as_bytes())
+                    .publish(gossipsub_topic.clone(), msg.as_bytes())
                 {
-                    println!("Publish error: {e:?}");
+                    println!("❌  Subscriber Publish error: {e:?}, {msg}");
                 }
             }
             SwarmEvent::ListenerClosed {
@@ -227,7 +256,11 @@ pub async fn start(mut request_recvr: mpsc::Receiver<Message<ServerResponse>>) -
                 }
             }
             SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
-                println!("❌⛓️ Connection Closed to: {peer_id} caused by {cause:?}");
+                swarm
+                    .behaviour_mut()
+                    .gossipsub
+                    .remove_explicit_peer(&peer_id);
+                println!("❌⛓️ Connection Closed to: {peer_id} caused by {cause:?}")
             }
             event => eprintln!("🌟 Event: {event:?}\n"),
         }
@@ -237,9 +270,9 @@ pub async fn start(mut request_recvr: mpsc::Receiver<Message<ServerResponse>>) -
 #[derive(NetworkBehaviour)]
 #[behaviour(out_event = "OutEvent", prelude = "libp2p::swarm::derive_prelude")]
 struct SuperChatBehaviour {
-    ping: ping::Behaviour,
+    // ping: ping::Behaviour,
     gossipsub: gossipsub::Behaviour,
-    keep_alive: keep_alive::Behaviour,
+    // keep_alive: keep_alive::Behaviour,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -264,4 +297,28 @@ impl From<Void> for OutEvent {
     fn from(event: Void) -> Self {
         void::unreachable(event)
     }
+}
+
+/// for a multiaddr that ends with a peer id, this strips this suffix. Rust-libp2p
+/// only supports dialing to an address without providing the peer id.
+fn strip_peer_id(addr: &mut Multiaddr) {
+    let last = addr.pop();
+    match last {
+        Some(Protocol::P2p(peer_id)) => {
+            let mut addr = Multiaddr::empty();
+            addr.push(Protocol::P2p(peer_id));
+            println!("removing peer id {addr} so this address can be dialed by rust-libp2p");
+        }
+        Some(other) => addr.push(other),
+        _ => {}
+    }
+}
+
+fn make_msg(str: &str) -> String {
+    let now = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+
+    now.to_string() + " Got Subscriber " + str
 }

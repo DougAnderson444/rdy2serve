@@ -1,7 +1,8 @@
 {
-    "name": "rdy2serve-sveltekit",
+    "name": "@douganderson444/rdy2serve-sveltekit",
     "version": "0.0.1",
-    "private": true,
+    "main": "index.js",
+    "module": "index.js",
     "scripts": {
         "dev": "vite dev",
         "build": "vite build",
@@ -9,7 +10,21 @@
         "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
         "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
     },
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "svelte": "./dist/index.js",
+            "import": "./dist/index.js"
+        }
+    },
+    "files": [
+        "dist"
+    ],
+    "peerDependencies": {
+        "svelte": "^3.54.0"
+    },
     "devDependencies": {
+        "@libp2p/interface-libp2p": "^1.1.2",
         "@sveltejs/adapter-auto": "^2.0.0",
         "@sveltejs/kit": "^1.5.0",
         "autoprefixer": "^10.4.13",
@@ -21,14 +36,17 @@
         "typescript": "^4.9.3",
         "vite": "^4.0.0"
     },
+    "svelte": "./dist/index.js",
+    "types": "./dist/index.d.ts",
     "type": "module",
     "dependencies": {
+        "@chainsafe/libp2p-gossipsub": "^6.2.0",
         "@chainsafe/libp2p-noise": "^11.0.1",
+        "@libp2p/floodsub": "^6.0.2",
+        "@libp2p/peer-id": "^2.0.3",
         "@libp2p/webrtc": "^1.0.4",
-        "@multiformats/multiaddr": "^11.5.0",
-        "it-first": "^2.0.1",
-        "it-pipe": "^2.0.5",
-        "libp2p": "^0.42.2",
+        "@multiformats/multiaddr": "^12.1.0",
+        "libp2p": "^0.43.2",
         "uint8arrays": "^4.0.3"
     }
 }

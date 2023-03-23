@@ -3,36 +3,25 @@
 
 use anyhow::Result;
 use bytes::Bytes;
-use clap::Parser;
 use futures::StreamExt;
 use libp2p::{
     core::{muxing::StreamMuxerBox, ConnectedPoint},
     gossipsub, identity,
     multiaddr::{Multiaddr, Protocol},
-    ping::{self, Config},
-    swarm::{
-        dial_opts::{DialOpts, PeerCondition},
-        keep_alive, NetworkBehaviour, SwarmBuilder, SwarmEvent,
-    },
-    webrtc, PeerId, Transport,
+    ping,
+    swarm::{dial_opts::DialOpts, SwarmBuilder, SwarmEvent},
+    webrtc, Transport,
 };
 use log::debug;
 use rand::thread_rng;
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
+use std::collections::HashMap;
 use std::net::Ipv6Addr;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
-use std::{collections::HashMap, time::Duration};
 use tokio::sync::{mpsc, oneshot};
-use void::Void;
 
-#[derive(Debug, Parser)]
-struct Cli {
-    /// Listen for connection on this port.
-    #[clap(long, default_value_t = 42069)]
-    port: u16,
-}
+mod behaviour;
+use behaviour::OutEvent;
 
 #[derive(Debug, Clone)]
 pub struct ServerResponse {
@@ -45,7 +34,7 @@ pub struct Message<T> {
 
 type Responder<T> = oneshot::Sender<T>;
 
-/// An example WebRTC server that will accept connections and run the ping protocol on them.
+/// An example WebRTC server that will accept connections and run the protocols on them.
 pub async fn start(mut request_recvr: mpsc::Receiver<Message<ServerResponse>>) -> Result<()> {
     // let mut config: Config = Config::default();
     let config: Arc<Mutex<HashMap<String, Bytes>>> = Arc::new(Mutex::new(HashMap::new()));
@@ -53,7 +42,7 @@ pub async fn start(mut request_recvr: mpsc::Receiver<Message<ServerResponse>>) -
 
     // Spawn an API manager to receive incoming Requests
     tokio::spawn(async move {
-        log::debug!(">>>> Reply listener spawned.");
+        log::debug!("Reply listener spawned");
         fn lock_get(cfg: &Arc<Mutex<HashMap<String, Bytes>>>, key: &str) -> Bytes {
             let lock = cfg.lock().unwrap();
             lock.get(key).unwrap().clone()
@@ -65,8 +54,6 @@ pub async fn start(mut request_recvr: mpsc::Receiver<Message<ServerResponse>>) -
             let _ = message.reply.send(ServerResponse { address });
         }
     });
-
-    let cli = Cli::parse();
 
     let gossipsub_topic = gossipsub::IdentTopic::new("chat");
 
@@ -82,31 +69,7 @@ pub async fn start(mut request_recvr: mpsc::Receiver<Message<ServerResponse>>) -
             .map(|(peer_id, conn), _| (peer_id, StreamMuxerBox::new(conn)))
             .boxed();
 
-        // To content-address message, we can take the hash of message and use it as an ID.
-        let message_id_fn = |message: &gossipsub::Message| {
-            let mut s = DefaultHasher::new();
-            message.data.hash(&mut s);
-            gossipsub::MessageId::from(s.finish().to_string())
-        };
-
-        // Set a custom gossipsub configuration
-        let gossipsub_config = gossipsub::ConfigBuilder::default()
-            .mesh_n_low(2) // experiment to see if this matters for WebRTC
-            .heartbeat_initial_delay(Duration::from_secs(1))
-            .check_explicit_peers_ticks(1)
-            .heartbeat_interval(Duration::from_secs(5)) // This is set to aid debugging by not cluttering the log space
-            .validation_mode(gossipsub::ValidationMode::Strict) // This sets the kind of message validation. The default is Strict (enforce message signing)
-            .message_id_fn(message_id_fn) // content-address messages. No two messages of the same content will be propagated.
-            .build()
-            .expect("Valid config");
-
-        let mut behaviour = SuperChatBehaviour {
-            gossipsub: gossipsub::Behaviour::new(
-                gossipsub::MessageAuthenticity::Signed(id_keys),
-                gossipsub_config,
-            )
-            .expect("Valid configuration"),
-        };
+        let mut behaviour = behaviour::SuperChatBehaviour::new(id_keys);
 
         behaviour.gossipsub.subscribe(&gossipsub_topic).unwrap();
 
@@ -160,7 +123,7 @@ pub async fn start(mut request_recvr: mpsc::Receiver<Message<ServerResponse>>) -
                 // let mut res = send_back_addr;
                 // strip_peer_id(&mut res);
 
-                // eprintln!("📞  Dialing {res}");
+                // eprintln!("📞  Server dialing the browser {res}");
 
                 // let dial_opts = DialOpts::unknown_peer_id()
                 //     // .condition(PeerCondition::NotDialing)
@@ -168,9 +131,9 @@ pub async fn start(mut request_recvr: mpsc::Receiver<Message<ServerResponse>>) -
                 //     // .extend_addresses_through_behaviour()
                 //     .build();
                 // if let Err(e) = swarm.dial(dial_opts) {
-                //     println!("Dialing error: {e:?}");
+                //     println!("❌  (Expected) Dialing error: {e:?}");
                 // }
-                // swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id)
+                swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id)
             }
             SwarmEvent::Behaviour(OutEvent::Gossipsub(gossipsub::Event::Message {
                 propagation_source: peer_id,
@@ -181,15 +144,6 @@ pub async fn start(mut request_recvr: mpsc::Receiver<Message<ServerResponse>>) -
                     "📨 Got message: '{}' with id: {id} from peer: {peer_id}",
                     String::from_utf8_lossy(&message.data),
                 );
-
-                // let msg = make_msg(&peer_id.to_base58());
-                // if let Err(e) = swarm
-                //     .behaviour_mut()
-                //     .gossipsub
-                //     .publish(gossipsub_topic.clone(), msg.as_bytes())
-                // {
-                //     println!("❌  Reply Publish error: {e:?}, message: {msg}");
-                // }
             }
             SwarmEvent::Behaviour(OutEvent::Gossipsub(gossipsub::Event::Subscribed {
                 peer_id,
@@ -223,6 +177,30 @@ pub async fn start(mut request_recvr: mpsc::Receiver<Message<ServerResponse>>) -
                     println!("❌  Subscriber Publish error: {e:?}, {msg}");
                 }
             }
+            SwarmEvent::Behaviour(OutEvent::Ping(ping::Event {
+                peer,
+                result: Ok(ping::Success::Ping { rtt }),
+            })) => {
+                let id = peer.to_string().to_owned();
+                eprintln!("🏐 Pinged {id} ({rtt:?})")
+            }
+            SwarmEvent::Behaviour(OutEvent::Ping(ping::Event {
+                peer,
+                result: Ok(ping::Success::Pong),
+            })) => {
+                let id = peer.to_string().to_owned();
+                eprintln!("🏓 Ponged by {id}");
+
+                let msg = make_msg(&peer.to_base58());
+
+                if let Err(e) = swarm
+                    .behaviour_mut()
+                    .gossipsub
+                    .publish(gossipsub_topic.clone(), msg.as_bytes())
+                {
+                    println!("❌  Subscriber Publish error: {e:?}, {msg}");
+                }
+            }
             SwarmEvent::ListenerClosed {
                 listener_id,
                 addresses,
@@ -242,32 +220,11 @@ pub async fn start(mut request_recvr: mpsc::Receiver<Message<ServerResponse>>) -
                     .remove_explicit_peer(&peer_id);
                 println!("❌⛓️ Connection Closed to: {peer_id} caused by {cause:?}")
             }
+            SwarmEvent::OutgoingConnectionError { error, .. } => {
+                log::debug!("❌📞 Can't dial a browser (yet) {error:?}")
+            }
             event => eprintln!("🌟 Event: {event:?}\n"),
         }
-    }
-}
-
-#[derive(NetworkBehaviour)]
-#[behaviour(out_event = "OutEvent", prelude = "libp2p::swarm::derive_prelude")]
-struct SuperChatBehaviour {
-    gossipsub: gossipsub::Behaviour,
-}
-
-#[allow(clippy::large_enum_variant)]
-#[derive(Debug)]
-enum OutEvent {
-    Gossipsub(gossipsub::Event),
-}
-
-impl From<gossipsub::Event> for OutEvent {
-    fn from(event: gossipsub::Event) -> Self {
-        OutEvent::Gossipsub(event)
-    }
-}
-
-impl From<Void> for OutEvent {
-    fn from(event: Void) -> Self {
-        void::unreachable(event)
     }
 }
 
@@ -293,5 +250,5 @@ fn make_msg(str: &str) -> String {
         .unwrap()
         .as_nanos();
 
-    now.to_string() + " Got Subscriber " + str
+    now.to_string() + " Subscriber " + str
 }

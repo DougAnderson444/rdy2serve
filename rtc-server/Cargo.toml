@@ -18,7 +18,6 @@ bytes = "1"
 tracing = "0.1.34"
 
 [dependencies.libp2p]
-path = "../../rust-libp2p/libp2p" # fork
 version = "0.51.1"
 features = [
     "gossipsub",

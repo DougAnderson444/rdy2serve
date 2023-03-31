@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    h1 {
+        @apply text-3xl w-full;
+    }
+    h2 {
+        @apply text-2xl;
+    }
+    h3 {
+        @apply text-lg;
+    }
+    h4 {
+        @apply text-base;
+    }
+    p {
+        @apply mt-2;
+    }
+    html {
+        /* Use tailwind @apply to set the background to a gradient to neutral-800 after the first 400px vertically */
+        @apply text-neutral-700;
+        @apply bg-neutral-50;
+        /* @apply bg-gradient-to-b from-black to-transparent; */
+        /* background-size: 100% 1000px, 100% 100%; */
+        /* background-repeat: no-repeat; */
+    }
+    a {
+        @apply text-blue-500 underline;
+    }
+
+    button {
+        @apply border-0 rounded m-2 p-2 w-fit bg-amber-500 text-white shadow;
+    }
+}

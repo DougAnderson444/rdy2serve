@@ -4,10 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace]
-members = [
-  # "clients/leptos",
-  "rtc-server"
-]
+members = ["clients/leptos-client", "rtc-server", "websys-webrtc-transport"]
+resolver = "2"                                                               # https://doc.rust-lang.org/cargo/reference/resolver.html#resolver-versions
+
+[workspace.dependencies]
+websys-webrtc-transport = { path = "websys-webrtc-transport" }
 
 [dependencies]
 anyhow = "1.0.69"
@@ -28,7 +29,5 @@ debug = 2
 opt-level = 0
 
 [patch.crates-io]
-libp2p = { git = "https://github.com/vnermolaev/rust-libp2p.git", branch = "deprecate/gossipsub-close-event", version = "0.51.2" } # debugging https://github.com/libp2p/rust-libp2p/pull/3625
-# libp2p = { git = "https://github.com/vnermolaev/rust-libp2p/tree/deprecate/gossipsub-close-event" }
-# version = "0.51.1"
-# branch = "deprecate/gossipsub-close-event"
+libp2p = { git = "https://github.com/vnermolaev/rust-libp2p.git", branch = "deprecate/gossipsub-close-event", version = "*" } # debugging https://github.com/libp2p/rust-libp2p/pull/3625
+# libp2p = { path = "../rust-libp2p/libp2p" } # to insert more debug logs

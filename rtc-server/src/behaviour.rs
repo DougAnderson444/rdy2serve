@@ -27,7 +27,7 @@ impl SuperChatBehaviour {
         // Set a custom gossipsub configuration
         let gossipsub_config = gossipsub::ConfigBuilder::default()
             // .mesh_n_low(2) // experiment to see if this matters for WebRTC
-            // .heartbeat_initial_delay(Duration::from_secs(1))
+            // .support_floodsub()
             .check_explicit_peers_ticks(1)
             .heartbeat_initial_delay(Duration::from_secs(30))
             .heartbeat_interval(Duration::from_secs(60)) // This is set to aid debugging by not cluttering the log space
